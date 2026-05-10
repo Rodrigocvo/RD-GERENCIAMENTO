@@ -71,6 +71,7 @@ export default function Dashboard() {
   const [filterType, setFilterType] = useState<FilterType>('monthly');
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [bets, setBets] = useState<BetData[]>([]);
   const [editingBet, setEditingBet] = useState<BetData | null>(null);
   const [analysisContext, setAnalysisContext] = useState<string>('Geral');
@@ -359,11 +360,26 @@ export default function Dashboard() {
            <LayoutDashboard size={48} className="text-primary" />
         </div>
         <h1 className="font-headline-lg text-white mb-4 uppercase tracking-tighter">RD GERENCIAMENTO</h1>
-        <p className="text-slate-400 font-body-md max-w-sm mb-12">
+        <p className="text-slate-400 font-body-md max-w-sm mb-6">
           Gerencie suas apostas com precisão profissional e tenha seus dados sincronizados em tempo real em todos os seus dispositivos.
         </p>
+
+        {loginError && (
+          <div className="mb-6 p-4 bg-error/10 border border-error/20 rounded-xl text-error text-sm font-label-mono max-w-md">
+            Erro ao entrar: {loginError}
+            <p className="mt-2 text-xs opacity-70">Verifique se os domínios do app estão autorizados no console do Firebase.</p>
+          </div>
+        )}
+
         <button 
-          onClick={loginWithGoogle}
+          onClick={async () => {
+            setLoginError(null);
+            try {
+              await loginWithGoogle();
+            } catch (err: any) {
+              setLoginError(err.message || 'Erro desconhecido');
+            }
+          }}
           className="flex items-center gap-3 bg-white text-slate-900 px-8 py-4 rounded-xl font-headline font-bold text-sm tracking-widest uppercase hover:bg-slate-200 transition-all active:scale-95"
         >
           <LogIn size={20} />
