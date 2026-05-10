@@ -1,0 +1,49 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "initialBankroll": { "type": "number" },
+        "isDark": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Bet": {
+      "title": "Bet",
+      "description": "Individual bet entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "event": { "type": "string" },
+        "market": { "type": "string" },
+        "result": { "type": "string" },
+        "roi": { "type": "string" },
+        "type": { "type": "string", "enum": ["win", "loss"] },
+        "odds": { "type": "string" },
+        "stake": { "type": "string" },
+        "bonusPercent": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "event", "market", "result", "userId"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User documents"
+    },
+    "users/{userId}/bets/{betId}": {
+      "schema": "Bet",
+      "description": "User's bets"
+    }
+  }
+}

@@ -26,17 +26,42 @@ import {
   ExternalLink,
   ArrowRight,
   Sun,
-  Moon
+  Moon,
+  DownloadCloud,
+  ChevronRight,
+  Smartphone,
+  Monitor,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 import RegisterBet from './views/RegisterBet';
+import { useFirebase } from './FirebaseProvider';
+import { 
+  db, 
+  logout, 
+  handleFirestoreError, 
+  OperationType 
+} from '../lib/firebase';
+import { 
+  collection, 
+  onSnapshot, 
+  query, 
+  where, 
+  orderBy, 
+  doc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  serverTimestamp,
+  setDoc
+} from 'firebase/firestore';
 
 // Types
-type ViewState = 'dashboard' | 'register' | 'analysis' | 'history';
+type ViewState = 'dashboard' | 'register' | 'analysis' | 'history' | 'install';
 
 interface BetData {
-  id: number;
+  id: string; // Changed to string for Firestore doc bits
   date: string;
   event: string;
   market: string;
@@ -45,24 +70,56 @@ interface BetData {
   type: 'win' | 'loss';
   odds?: string;
   stake?: string;
+  bonusPercent?: string;
 }
 
-// Initial Mock data
-const initialHistory: BetData[] = [
-  { id: 1, date: '28/05/2024', event: 'Real Madrid vs Dortmund', market: 'Over 2.5 Goals', result: 'Ganha', roi: '+85%', type: 'win', odds: '1.85', stake: '100' },
-  { id: 2, date: '27/05/2024', event: 'Lakers vs Nuggets', market: 'Moneyline Home', result: 'Perdida', roi: '-100%', type: 'loss', odds: '1.90', stake: '50' },
-  { id: 3, date: '26/05/2024', event: 'Palmeiras vs Flamengo', market: 'BTTS Yes', result: 'Ganha', roi: '+110%', type: 'win', odds: '2.10', stake: '80' },
-  { id: 4, date: '25/05/2024', event: 'Man City vs Man Utd', market: 'Asian Handicap -1.5', result: 'Perdida', roi: '-100%', type: 'loss', odds: '1.75', stake: '120' },
-  { id: 5, date: '24/05/2024', event: 'Celtics vs Pacers', market: 'Total Under 210.5', result: 'Ganha', roi: '+92%', type: 'win', odds: '1.92', stake: '100' },
-];
-
 export default function Dashboard() {
+  const { user, userData } = useFirebase();
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
-  const [bets, setBets] = useState<BetData[]>(initialHistory);
+  const [bets, setBets] = useState<BetData[]>([]);
   const [editingBet, setEditingBet] = useState<BetData | null>(null);
   const [analysisContext, setAnalysisContext] = useState<string>('Geral');
-  const [initialBankroll, setInitialBankroll] = useState(10000);
+  const [initialBankroll, setInitialBankrollState] = useState(10000);
   const [isEditingBankroll, setIsEditingBankroll] = useState(false);
+
+  // Sync initial bankroll from userData
+  React.useEffect(() => {
+    if (userData?.initialBankroll) {
+      setInitialBankrollState(userData.initialBankroll);
+    }
+  }, [userData]);
+
+  const updateInitialBankroll = async (value: number) => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { initialBankroll: value });
+      setInitialBankrollState(value);
+      setIsEditingBankroll(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  // Real-time bets sync
+  React.useEffect(() => {
+    if (!user) return;
+
+    const betsRef = collection(db, 'users', user.uid, 'bets');
+    const q = query(betsRef, orderBy('createdAt', 'desc'));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const betsData = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as BetData[];
+      setBets(betsData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/bets`);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   // Dynamic Calculations
   const stats = React.useMemo(() => {
@@ -160,8 +217,14 @@ export default function Dashboard() {
 
   const currentAnalysis = analysisConfig[analysisContext as keyof typeof analysisConfig] || analysisConfig['Geral'];
 
-  const handleDelete = (id: number) => {
-    setBets(bets.filter(b => b.id !== id));
+  const handleDelete = async (id: string) => {
+    if (!user) return;
+    try {
+      const betRef = doc(db, 'users', user.uid, 'bets', id);
+      await deleteDoc(betRef);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/bets/${id}`);
+    }
   };
 
   const handleEdit = (bet: BetData) => {
@@ -169,34 +232,39 @@ export default function Dashboard() {
     setActiveView('register');
   };
 
-  const onSaveBet = (betData: any) => {
-    // Calculate ROI and Result Type based on data
-    const oddsV = parseFloat(betData.odds) || 0;
-    const bonusV = parseFloat(betData.bonusPercent || '0') || 0;
-    const boostedV = oddsV * (1 + bonusV / 100);
-    
-    const roiValue = betData.result === 'win' 
-      ? `+${((boostedV - 1) * 100).toFixed(0)}%` 
-      : betData.result === 'loss' ? '-100%' : 'Pendente';
+  const onSaveBet = async (betData: any) => {
+    if (!user) return;
+    try {
+      const oddsV = parseFloat(betData.odds) || 0;
+      const bonusV = parseFloat(betData.bonusPercent || '0') || 0;
+      const boostedV = oddsV * (1 + bonusV / 100);
+      
+      const roiValue = betData.result === 'win' 
+        ? `+${((boostedV - 1) * 100).toFixed(0)}%` 
+        : betData.result === 'loss' ? '-100%' : 'Pendente';
 
-    if (editingBet) {
-      setBets(bets.map(b => b.id === editingBet.id ? { 
-        ...betData, 
-        id: b.id, 
+      const betToSave = {
+        ...betData,
+        updatedAt: serverTimestamp(),
         type: betData.result === 'win' ? 'win' : betData.result === 'loss' ? 'loss' : 'win', 
         roi: roiValue 
-      } : b));
-      setEditingBet(null);
-    } else {
-      const newBet = {
-        ...betData,
-        id: Math.max(0, ...bets.map(b => b.id)) + 1,
-        type: betData.result === 'win' ? 'win' : betData.result === 'loss' ? 'loss' : 'win',
-        roi: roiValue
       };
-      setBets([newBet, ...bets]);
+
+      if (editingBet) {
+        const betRef = doc(db, 'users', user.uid, 'bets', editingBet.id);
+        await updateDoc(betRef, betToSave);
+        setEditingBet(null);
+      } else {
+        const betsRef = collection(db, 'users', user.uid, 'bets');
+        await addDoc(betsRef, {
+          ...betToSave,
+          createdAt: serverTimestamp(),
+        });
+      }
+      setActiveView('history');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/bets`);
     }
-    setActiveView('history');
   };
 
   const navigateToAnalysis = (context: string) => {
@@ -234,13 +302,16 @@ export default function Dashboard() {
               <img 
                 alt="User Profile Avatar" 
                 className="w-full h-full object-cover" 
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuANz3V1A1iflFa7bVeMqJ9nDgDogkZNKXPg0aDxZMcLQRapfzJOZ9siaxEY-BB9c0hImJxQaFbvGd_pRuSe-elbDT37tJQ9WRA3cdvD81kvicAqtbDFbOQyRgoG28IQUBuhxezbXts8xQsNeKdtjeI7nLxOqc0j0yu7OIGR4U4q0gzLYA3-4tFMBgFxWZRHK_H2xuizSwx_yzTvxav-T9k9_jqwFqSnX-iyc4bg0QKZplI2ddGCxr2YprSUNWJTU-rQxK35JkzoXeI"
+                src={user?.photoURL || "https://api.dicebear.com/7.x/avataaars/svg?seed=RD"}
                 referrerPolicy="no-referrer"
               />
             </div>
-            <h1 className="font-headline text-2xl font-bold text-primary hidden md:block">RD GERENCIAMENTO</h1>
-            <div className="flex flex-col ml-2 md:ml-0">
-               <span className="font-label-mono text-[10px] text-on-surface-variant uppercase leading-none">Horário Local</span>
+            <div>
+               <h1 className="font-headline text-lg font-bold text-primary hidden md:block leading-none">RD GERENCIAMENTO</h1>
+               <span className="text-[10px] text-on-surface-variant font-label-mono truncate max-w-[120px] block">{user?.displayName || user?.email}</span>
+            </div>
+            <div className="flex flex-col ml-2 md:ml-0 bg-primary/5 px-3 py-1 rounded-lg border border-primary/10">
+               <span className="font-label-mono text-[10px] text-on-surface-variant uppercase leading-none">Relógio</span>
                <span className="font-mono text-sm text-primary font-bold">{currentTime.toLocaleTimeString('pt-BR')}</span>
             </div>
           </div>
@@ -253,8 +324,12 @@ export default function Dashboard() {
             >
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors active:scale-95 text-primary border border-outline-variant/30">
-              <Bell size={20} />
+            <button 
+              onClick={() => logout()}
+              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-error/10 text-error transition-all active:scale-90 border border-error/20"
+              title="Sair da Conta"
+            >
+              <LogOut size={20} />
             </button>
           </div>
         </div>
@@ -343,13 +418,20 @@ export default function Dashboard() {
                           <input 
                             type="number" 
                             className="bg-on-primary-container/10 border border-on-primary-container/20 rounded px-2 py-1 text-on-primary-container w-full outline-none focus:border-on-primary-container"
-                            value={initialBankroll}
-                            onChange={(e) => setInitialBankroll(parseFloat(e.target.value) || 0)}
+                            defaultValue={initialBankroll}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                updateInitialBankroll(parseFloat((e.target as HTMLInputElement).value) || 0);
+                              }
+                            }}
                             autoFocus
                           />
                           <button 
-                            onClick={() => setIsEditingBankroll(false)}
-                            className="bg-on-primary-container text-primary-container px-3 rounded font-bold text-xs uppercase"
+                            onClick={(e) => {
+                                const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                updateInitialBankroll(parseFloat(input.value) || 0);
+                            }}
+                            className="bg-on-primary text-primary px-3 rounded font-bold text-xs uppercase"
                           >
                             OK
                           </button>
@@ -560,6 +642,92 @@ export default function Dashboard() {
               </div>
             </motion.div>
           )}
+
+          {activeView === 'install' && (
+            <motion.div 
+              key="install"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-8"
+            >
+              <div className="text-center space-y-4">
+                <div className="inline-block p-4 bg-primary/10 rounded-2xl text-primary mb-2">
+                  <Smartphone size={48} />
+                </div>
+                <h2 className="font-headline-md text-on-surface">Instalar no Celular</h2>
+                <p className="text-on-surface-variant max-w-md mx-auto">
+                  Este aplicativo é um PWA (Progressive Web App). Você pode instalá-lo sem precisar da Play Store ou App Store.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-surface-container border border-outline-variant rounded-2xl p-6 space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-on-surface/5 rounded-lg">
+                      <ChevronRight className="text-primary" />
+                    </div>
+                    <h3 className="font-title-lg text-on-surface">iOS (iPhone/iPad)</h3>
+                  </div>
+                  <ol className="space-y-4 text-on-surface-variant font-body-md">
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-primary text-white text-xs rounded-full">1</span>
+                      <span>Abra este site no <strong>Safari</strong>.</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-primary text-white text-xs rounded-full">2</span>
+                      <span>Toque no botão de <strong>Compartilhar</strong> (quadrado com seta para cima).</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-primary text-white text-xs rounded-full">3</span>
+                      <span>Role para baixo e selecione <strong>Adicionar à Tela de Início</strong>.</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-primary text-white text-xs rounded-full">4</span>
+                      <span>Pronto! O app aparecerá junto com seus outros aplicativos.</span>
+                    </li>
+                  </ol>
+                </div>
+
+                <div className="bg-surface-container border border-outline-variant rounded-2xl p-6 space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-on-surface/5 rounded-lg">
+                      <ChevronRight className="text-primary" />
+                    </div>
+                    <h3 className="font-title-lg text-on-surface">Android (Samsung, Xiaomi, etc.)</h3>
+                  </div>
+                  <ol className="space-y-4 text-on-surface-variant font-body-md">
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-secondary text-white text-xs rounded-full">1</span>
+                      <span>Toque nos <strong>três pontos</strong> no canto superior direito do navegador.</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-secondary text-white text-xs rounded-full">2</span>
+                      <span>Selecione <strong>Instalar Aplicativo</strong> ou "Adicionar à Tela Inicial".</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-secondary text-white text-xs rounded-full">3</span>
+                      <span>Confirme a instalação na janela pop-up.</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-secondary text-white text-xs rounded-full">4</span>
+                      <span>O app será adicionado à sua gaveta de aplicativos.</span>
+                    </li>
+                  </ol>
+                </div>
+              </div>
+
+              <div className="bg-surface-container-high/50 border border-primary/20 rounded-2xl p-6 flex items-center gap-4">
+                <Monitor className="text-primary flex-shrink-0" size={32} />
+                <div>
+                  <h4 className="font-title-md text-on-surface">Também funciona no Computador</h4>
+                  <p className="text-sm text-on-surface-variant">
+                    No Chrome ou Edge, clique no ícone de "Instalar" que aparece na barra de endereços (URL).
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
       </main>
 
@@ -589,6 +757,12 @@ export default function Dashboard() {
           icon={<History />} 
           label="History" 
           onClick={() => setActiveView('history')}
+        />
+        <NavItem 
+          active={activeView === 'install'} 
+          icon={<DownloadCloud />} 
+          label="Baixar App" 
+          onClick={() => setActiveView('install')}
         />
       </nav>
     </div>

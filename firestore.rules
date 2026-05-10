@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid == request.auth.uid &&
+             data.email is string &&
+             data.email.size() <= 256;
+    }
+
+    function isValidBet(data) {
+      return data.keys().hasAll(['date', 'event', 'market', 'result']) &&
+             data.date is string && data.date.size() <= 100 &&
+             data.event is string && data.event.size() <= 500 &&
+             data.market is string && data.market.size() <= 500 &&
+             data.result is string && data.result.size() <= 100;
+    }
+
+    // Collection Security
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['initialBankroll', 'isDark', 'displayName', 'photoURL'])
+      );
+
+      match /bets/{betId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidBet(request.resource.data);
+        allow update: if isOwner(userId) && isValidBet(request.resource.data) && (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['date', 'event', 'market', 'result', 'odds', 'stake', 'bonusPercent', 'roi', 'type', 'updatedAt'])
+        );
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

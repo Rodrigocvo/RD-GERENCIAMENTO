@@ -14,7 +14,7 @@ import {
 import { cn } from '@/src/lib/utils';
 
 interface BetData {
-  id?: number;
+  id?: string;
   date: string;
   event: string;
   market: string;
@@ -25,13 +25,13 @@ interface BetData {
 }
 
 interface RegisterBetProps {
-  onSave: (bet: BetData) => void;
+  onSave: (bet: any) => void;
   onCancel?: () => void;
-  initialData?: BetData | null;
+  initialData?: any | null;
 }
 
 export default function RegisterBet({ onSave, onCancel, initialData }: RegisterBetProps) {
-  const [formData, setFormData] = useState<BetData>(initialData || {
+  const [formData, setFormData] = useState<any>(initialData || {
     date: new Date().toISOString().split('T')[0],
     event: '',
     market: '',
@@ -53,13 +53,12 @@ export default function RegisterBet({ onSave, onCancel, initialData }: RegisterB
   const expectedProfit = (boostedOdds > 1 && stakeNum > 0) ? (stakeNum * (boostedOdds - 1)).toFixed(2) : '0.00';
   const expectedReturn = (boostedOdds > 0 && stakeNum > 0) ? (stakeNum * boostedOdds).toFixed(2) : '0.00';
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     
-    // Simulate API delay
-    setTimeout(() => {
-      onSave(formData);
+    try {
+      await onSave(formData);
       setIsSubmitting(false);
       setSuccess(true);
       if (!initialData) {
@@ -69,11 +68,15 @@ export default function RegisterBet({ onSave, onCancel, initialData }: RegisterB
           market: '',
           odds: '',
           stake: '',
-          result: 'pending'
+          result: 'pending',
+          bonusPercent: '0'
         });
       }
       setTimeout(() => setSuccess(false), 3000);
-    }, 600);
+    } catch (error) {
+      console.error("Error saving bet", error);
+      setIsSubmitting(false);
+    }
   };
 
   return (
