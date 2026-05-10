@@ -14,7 +14,7 @@ import {
 import { cn } from '@/src/lib/utils';
 
 interface BetData {
-  id?: string | number;
+  id?: number;
   date: string;
   event: string;
   market: string;
@@ -22,7 +22,6 @@ interface BetData {
   stake: string;
   result: string;
   bonusPercent?: string;
-  bonusValue?: string;
 }
 
 interface RegisterBetProps {
@@ -39,8 +38,7 @@ export default function RegisterBet({ onSave, onCancel, initialData }: RegisterB
     odds: '',
     stake: '',
     result: 'pending',
-    bonusPercent: '0',
-    bonusValue: '0'
+    bonusPercent: '0'
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,13 +48,10 @@ export default function RegisterBet({ onSave, onCancel, initialData }: RegisterB
   const oddsNum = parseFloat(formData.odds) || 0;
   const stakeNum = parseFloat(formData.stake) || 0;
   const bonusPct = parseFloat(formData.bonusPercent || '0') || 0;
-  const bonusVal = parseFloat(formData.bonusValue || '0') || 0;
   
   const boostedOdds = oddsNum > 0 ? oddsNum * (1 + bonusPct / 100) : 0;
-  
-  const profitFromStake = (boostedOdds > 1 && stakeNum > 0) ? (stakeNum * (boostedOdds - 1)) : 0;
-  const expectedProfit = (profitFromStake + bonusVal).toFixed(2);
-  const expectedReturn = (stakeNum > 0 && boostedOdds > 0) ? (stakeNum + profitFromStake + bonusVal).toFixed(2) : '0.00';
+  const expectedProfit = (boostedOdds > 1 && stakeNum > 0) ? (stakeNum * (boostedOdds - 1)).toFixed(2) : '0.00';
+  const expectedReturn = (boostedOdds > 0 && stakeNum > 0) ? (stakeNum * boostedOdds).toFixed(2) : '0.00';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,7 +164,7 @@ export default function RegisterBet({ onSave, onCancel, initialData }: RegisterB
           </div>
 
           {/* Stake & Boost */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="font-label-mono text-on-surface-variant uppercase flex items-center gap-2">
                 R$ Stake (Montante)
@@ -185,7 +180,7 @@ export default function RegisterBet({ onSave, onCancel, initialData }: RegisterB
             </div>
             <div className="space-y-2">
               <label className="font-label-mono text-on-surface-variant uppercase flex items-center gap-2">
-                Bônus (%)
+                Bônus da Casa (%)
               </label>
               <div className="relative">
                 <input 
@@ -196,21 +191,6 @@ export default function RegisterBet({ onSave, onCancel, initialData }: RegisterB
                   onChange={(e) => setFormData({...formData, bonusPercent: e.target.value})}
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant font-label-mono">%</span>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="font-label-mono text-on-surface-variant uppercase flex items-center gap-2 text-primary">
-                Bônus (R$ Valor)
-              </label>
-              <div className="relative">
-                <input 
-                  type="number" 
-                  placeholder="0.00"
-                  className="w-full bg-surface-container-high border border-primary/30 rounded-lg p-3 pr-10 text-on-surface focus:outline-none focus:border-primary transition-colors"
-                  value={formData.bonusValue}
-                  onChange={(e) => setFormData({...formData, bonusValue: e.target.value})}
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-primary font-label-mono">R$</span>
               </div>
             </div>
           </div>

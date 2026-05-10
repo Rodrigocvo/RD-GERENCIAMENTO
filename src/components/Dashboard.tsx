@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import { 
   BarChart, 
   Bar, 
@@ -17,7 +17,7 @@ import {
   CheckCircle, 
   AlertTriangle, 
   Bell, 
-  LayoutDashboard, 
+  LayoutDashboard,
   PlusCircle,
   BarChart2,
   History,
@@ -26,33 +26,17 @@ import {
   ExternalLink,
   ArrowRight,
   Sun,
-  Moon,
-  LogOut,
-  LogIn
+  Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 import RegisterBet from './views/RegisterBet';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  doc, 
-  setDoc, 
-  deleteDoc, 
-  serverTimestamp, 
-  orderBy
-} from 'firebase/firestore';
-import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 
 // Types
 type ViewState = 'dashboard' | 'register' | 'analysis' | 'history';
-type FilterType = 'daily' | 'monthly' | 'yearly';
 
 interface BetData {
-  id: string | number;
+  id: number;
   date: string;
   event: string;
   market: string;
@@ -61,97 +45,28 @@ interface BetData {
   type: 'win' | 'loss';
   odds?: string;
   stake?: string;
-  bonusPercent?: string;
-  bonusValue?: string;
-  userId?: string;
 }
+
+// Initial Mock data
+const initialHistory: BetData[] = [
+  { id: 1, date: '28/05/2024', event: 'Real Madrid vs Dortmund', market: 'Over 2.5 Goals', result: 'Ganha', roi: '+85%', type: 'win', odds: '1.85', stake: '100' },
+  { id: 2, date: '27/05/2024', event: 'Lakers vs Nuggets', market: 'Moneyline Home', result: 'Perdida', roi: '-100%', type: 'loss', odds: '1.90', stake: '50' },
+  { id: 3, date: '26/05/2024', event: 'Palmeiras vs Flamengo', market: 'BTTS Yes', result: 'Ganha', roi: '+110%', type: 'win', odds: '2.10', stake: '80' },
+  { id: 4, date: '25/05/2024', event: 'Man City vs Man Utd', market: 'Asian Handicap -1.5', result: 'Perdida', roi: '-100%', type: 'loss', odds: '1.75', stake: '120' },
+  { id: 5, date: '24/05/2024', event: 'Celtics vs Pacers', market: 'Total Under 210.5', result: 'Ganha', roi: '+92%', type: 'win', odds: '1.92', stake: '100' },
+];
 
 export default function Dashboard() {
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
-  const [filterType, setFilterType] = useState<FilterType>('monthly');
-  const [syncCode, setSyncCode] = useState<string>(localStorage.getItem('rd_sync_code') || '');
-  const [isSyncing, setIsSyncing] = useState(!!localStorage.getItem('rd_sync_code'));
-  const [loading, setLoading] = useState(false);
-  const [bets, setBets] = useState<BetData[]>([]);
+  const [bets, setBets] = useState<BetData[]>(initialHistory);
   const [editingBet, setEditingBet] = useState<BetData | null>(null);
   const [analysisContext, setAnalysisContext] = useState<string>('Geral');
   const [initialBankroll, setInitialBankroll] = useState(10000);
   const [isEditingBankroll, setIsEditingBankroll] = useState(false);
 
-  const [isDark, setIsDark] = useState(true);
-
-  // Fetch Data from Firebase
-  useEffect(() => {
-    if (!syncCode) return;
-
-    const betsRef = collection(db, 'bets');
-    const q = query(
-      betsRef, 
-      where('userId', '==', syncCode),
-      orderBy('date', 'desc')
-    );
-
-    const unsubscribeBets = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as BetData[];
-      setBets(data);
-    }, (error) => {
-      console.error("Firestore error", error);
-    });
-
-    const settingsRef = doc(db, 'settings', syncCode);
-    const unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const settings = docSnap.data();
-        setInitialBankroll(settings.initialBankroll ?? 10000);
-        if (settings.isDark !== undefined) {
-          setIsDark(settings.isDark);
-        }
-      }
-    }, (error) => {
-      console.error("Settings error", error);
-    });
-
-    return () => {
-      unsubscribeBets();
-      unsubscribeSettings();
-    };
-  }, [syncCode]);
-
-  // Filter bets based on selected period
-  const filteredBets = useMemo(() => {
-    const now = new Date();
-    return bets.filter(bet => {
-      if (!bet.date) return false;
-      
-      let betDate: Date;
-      if (bet.date.includes('/')) {
-        const [day, month, year] = bet.date.split('/').map(Number);
-        betDate = new Date(year, month - 1, day);
-      } else {
-        // Handle YYYY-MM-DD
-        const [year, month, day] = bet.date.split('-').map(Number);
-        betDate = new Date(year, month - 1, day);
-      }
-      
-      if (isNaN(betDate.getTime())) return false;
-      
-      if (filterType === 'daily') {
-        return betDate.toDateString() === now.toDateString();
-      } else if (filterType === 'monthly') {
-        return betDate.getMonth() === now.getMonth() && betDate.getFullYear() === now.getFullYear();
-      } else if (filterType === 'yearly') {
-        return betDate.getFullYear() === now.getFullYear();
-      }
-      return true;
-    });
-  }, [bets, filterType]);
-
   // Dynamic Calculations
-  const stats = useMemo(() => {
-    const closedBets = filteredBets.filter(b => b.result !== 'pending');
+  const stats = React.useMemo(() => {
+    const closedBets = bets.filter(b => b.result !== 'pending');
     
     let totalProfit = 0;
     let totalStaked = 0;
@@ -160,17 +75,14 @@ export default function Dashboard() {
     closedBets.forEach(bet => {
       const odd = parseFloat(bet.odds || '0');
       const stake = parseFloat(bet.stake || '0');
-      const bonusPct = parseFloat(bet.bonusPercent || '0') || 0;
-      const bonusVal = parseFloat(bet.bonusValue || '0') || 0;
-      
-      const potentialProfitFromStake = stake * (odd - 1);
-      const profitWithBonusPct = potentialProfitFromStake * (1 + bonusPct / 100);
+      const bonus = parseFloat(bet.bonusPercent || '0') || 0;
+      const effectiveOdd = odd * (1 + bonus / 100);
       
       totalStaked += stake;
       sumOdds += odd;
       
       if (bet.result === 'win' || bet.result === 'Ganha') {
-        totalProfit += profitWithBonusPct + bonusVal;
+        totalProfit += stake * (effectiveOdd - 1);
       } else if (bet.result === 'loss' || bet.result === 'Perdida') {
         totalProfit -= stake;
       }
@@ -193,49 +105,43 @@ export default function Dashboard() {
       profitValue: totalProfit,
       count: closedBets.length
     };
-  }, [filteredBets, initialBankroll]);
+  }, [bets, initialBankroll]);
 
-  // Generate chart data based on filtered bets
-  const dynamicChartData = useMemo(() => {
-    return filteredBets.slice(0, 15).reverse().map((b, i) => {
+  // Generate chart data based on last 15 days performance trend
+  const dynamicChartData = React.useMemo(() => {
+    // For a real app, this would group profits by date
+    // For now, we'll map the last few bets to the chart bars to show activity
+    return bets.slice(0, 15).reverse().map((b, i) => {
       const odd = parseFloat(b.odds || '0');
       const stake = parseFloat(b.stake || '0');
-      const profit = b.result === 'win' || b.result === 'Ganha' ? (stake * (odd - 1)) : (b.result === 'loss' || b.result === 'Perdida' ? -stake : 0);
+      const profit = b.result === 'win' ? (stake * (odd - 1)) : (b.result === 'loss' ? -stake : 0);
       return {
-        name: b.date.includes('/') ? b.date.split('/')[0] : b.date.split('-')[2],
-        value: Math.abs(profit) || 50, 
-        profit: (b.result === 'win' || b.result === 'Ganha')
+        name: b.date.split('/')[0],
+        value: Math.abs(profit) || 50, // Fallback for visibility
+        profit: b.result === 'win'
       };
     });
-  }, [filteredBets]);
+  }, [bets]);
 
   // Generate detailed analysis data based on context
-  const analysisData = useMemo(() => {
+  const analysisData = React.useMemo(() => {
     const historicalBets = [...bets].reverse();
     let cumulativeProfit = 0;
     
     return historicalBets.map((b, i) => {
       const odd = parseFloat(b.odds || '0');
       const stake = parseFloat(b.stake || '0');
-      const bonusPct = parseFloat(b.bonusPercent || '0') || 0;
-      const bonusVal = parseFloat(b.bonusValue || '0') || 0;
-      
-      const potentialProfitFromStake = stake * (odd - 1);
-      const profitWithBonusPct = potentialProfitFromStake * (1 + bonusPct / 100);
-      const totalWinProfit = profitWithBonusPct + bonusVal;
+      const bonus = parseFloat(b.bonusPercent || '0') || 0;
+      const effectiveOdd = odd * (1 + bonus / 100);
       
       const profit = b.result === 'win' || b.result === 'Ganha' 
-        ? totalWinProfit 
+        ? stake * (effectiveOdd - 1) 
         : (b.result === 'loss' || b.result === 'Perdida' ? -stake : 0);
         
       cumulativeProfit += profit;
       
-      const name = b.date.includes('/') 
-        ? b.date.split('/')[0] + '/' + b.date.split('/')[1]
-        : b.date.split('-')[2] + '/' + b.date.split('-')[1];
-
       return {
-        name,
+        name: b.date.split('/')[0] + '/' + b.date.split('/')[1],
         odds: odd,
         lucro: cumulativeProfit,
         stake: stake,
@@ -254,13 +160,8 @@ export default function Dashboard() {
 
   const currentAnalysis = analysisConfig[analysisContext as keyof typeof analysisConfig] || analysisConfig['Geral'];
 
-  const handleDelete = async (id: string | number) => {
-    if (!syncCode) return;
-    try {
-      await deleteDoc(doc(db, 'bets', String(id)));
-    } catch (error) {
-      console.error("Delete error", error);
-    }
+  const handleDelete = (id: number) => {
+    setBets(bets.filter(b => b.id !== id));
   };
 
   const handleEdit = (bet: BetData) => {
@@ -268,59 +169,34 @@ export default function Dashboard() {
     setActiveView('register');
   };
 
-  const onSaveBet = async (betData: any) => {
-    if (!syncCode) return;
-    
+  const onSaveBet = (betData: any) => {
     // Calculate ROI and Result Type based on data
     const oddsV = parseFloat(betData.odds) || 0;
-    const stakeV = parseFloat(betData.stake) || 0;
-    const bonusPctV = parseFloat(betData.bonusPercent || '0') || 0;
-    const bonusValV = parseFloat(betData.bonusValue || '0') || 0;
+    const bonusV = parseFloat(betData.bonusPercent || '0') || 0;
+    const boostedV = oddsV * (1 + bonusV / 100);
     
-    const profitFromStake = stakeV * (oddsV - 1);
-    const winProfit = (profitFromStake * (1 + bonusPctV / 100)) + bonusValV;
-    
-    const roiValue = (betData.result === 'win' || betData.result === 'Ganha')
-      ? `+${((winProfit / stakeV) * 100).toFixed(0)}%` 
-      : (betData.result === 'loss' || betData.result === 'Perdida' ? '-100%' : 'Pendente');
+    const roiValue = betData.result === 'win' 
+      ? `+${((boostedV - 1) * 100).toFixed(0)}%` 
+      : betData.result === 'loss' ? '-100%' : 'Pendente';
 
-    const resultToSave = {
-      ...betData,
-      userId: syncCode,
-      type: betData.result === 'win' || betData.result === 'Ganha' ? 'win' : (betData.result === 'loss' || betData.result === 'Perdida' ? 'loss' : 'win'),
-      roi: roiValue,
-      updatedAt: serverTimestamp()
-    };
-
-    try {
-      if (editingBet) {
-        await setDoc(doc(db, 'bets', String(editingBet.id)), resultToSave, { merge: true });
-        setEditingBet(null);
-      } else {
-        const newBetRef = doc(collection(db, 'bets'));
-        await setDoc(newBetRef, {
-          ...resultToSave,
-          createdAt: serverTimestamp()
-        });
-      }
-      setActiveView('history');
-    } catch (error) {
-      console.error("Save error", error);
+    if (editingBet) {
+      setBets(bets.map(b => b.id === editingBet.id ? { 
+        ...betData, 
+        id: b.id, 
+        type: betData.result === 'win' ? 'win' : betData.result === 'loss' ? 'loss' : 'win', 
+        roi: roiValue 
+      } : b));
+      setEditingBet(null);
+    } else {
+      const newBet = {
+        ...betData,
+        id: Math.max(0, ...bets.map(b => b.id)) + 1,
+        type: betData.result === 'win' ? 'win' : betData.result === 'loss' ? 'loss' : 'win',
+        roi: roiValue
+      };
+      setBets([newBet, ...bets]);
     }
-  };
-
-  const saveBankroll = async (value: number) => {
-    if (!syncCode) return;
-    try {
-      await setDoc(doc(db, 'settings', syncCode), {
-        userId: syncCode,
-        initialBankroll: value,
-        isDark,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-    } catch (error) {
-      console.error("Settings save error", error);
-    }
+    setActiveView('history');
   };
 
   const navigateToAnalysis = (context: string) => {
@@ -328,16 +204,17 @@ export default function Dashboard() {
     setActiveView('analysis');
   };
 
+  const [isDark, setIsDark] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Update clock every second
-  useEffect(() => {
+  React.useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
   // Sync theme with HTML class
-  useEffect(() => {
+  React.useEffect(() => {
     if (isDark) {
       document.documentElement.classList.add('dark');
       document.documentElement.classList.remove('light');
@@ -347,111 +224,37 @@ export default function Dashboard() {
     }
   }, [isDark]);
 
-  const [syncInput, setSyncInput] = useState('');
-  const [showSyncError, setShowSyncError] = useState(false);
-
-  const applySync = () => {
-    if (syncInput.trim().length >= 4) {
-      const code = syncInput.trim().toUpperCase();
-      localStorage.setItem('rd_sync_code', code);
-      setSyncCode(code);
-      setIsSyncing(true);
-      setShowSyncError(false);
-    } else {
-      setShowSyncError(true);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[#020617] text-primary">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
-
-  if (!isSyncing) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-[#020617] p-6 text-center">
-        <div className="w-24 h-24 rounded-3xl bg-primary/10 flex items-center justify-center mb-8">
-           <LayoutDashboard size={48} className="text-primary" />
-        </div>
-        <h1 className="font-headline-lg text-white mb-4 uppercase tracking-tighter">RD GERENCIAMENTO</h1>
-        <p className="text-slate-400 font-body-md max-w-sm mb-12 leading-relaxed">
-          Para sincronizar entre seus dispositivos, use um código único. Se é sua primeira vez, invente qualquer código de 6 dígitos.
-        </p>
-        
-        <div className="w-full max-w-xs space-y-4">
-          <div className="flex flex-col text-left">
-            <label className="font-label-mono text-[10px] text-slate-400 uppercase mb-1 ml-1">Código de Sincronização</label>
-            <input 
-              type="text"
-              placeholder="Ex: RD123456"
-              className={cn(
-                "bg-slate-900 border px-4 py-4 rounded-xl text-white font-mono text-center tracking-widest outline-none transition-all",
-                showSyncError ? "border-error focus:border-error" : "border-slate-800 focus:border-primary"
-              )}
-              value={syncInput}
-              onChange={(e) => setSyncInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && applySync()}
-            />
-          </div>
-          <button 
-            onClick={applySync}
-            className="w-full bg-primary text-white py-4 rounded-xl font-headline font-bold text-xs tracking-widest uppercase hover:brightness-110 transition-all active:scale-95"
-          >
-            Acessar e Sincronizar
-          </button>
-          <div className="pt-4">
-            <p className="text-[10px] font-label-mono text-slate-500 uppercase">
-              Seus dados serão salvos em tempo real usando este código.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={cn("flex flex-col min-h-screen pb-24 transition-colors duration-300", isDark ? "bg-[#020617]" : "bg-slate-50")}>
       {/* TopAppBar */}
       <header className="bg-surface border-b border-outline-variant sticky top-0 z-50">
         <div className="flex justify-between items-center w-full px-6 py-3 max-w-7xl mx-auto h-16">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
-               <LayoutDashboard size={20} className="text-primary" />
+            <div className="w-10 h-10 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant">
+              <img 
+                alt="User Profile Avatar" 
+                className="w-full h-full object-cover" 
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuANz3V1A1iflFa7bVeMqJ9nDgDogkZNKXPg0aDxZMcLQRapfzJOZ9siaxEY-BB9c0hImJxQaFbvGd_pRuSe-elbDT37tJQ9WRA3cdvD81kvicAqtbDFbOQyRgoG28IQUBuhxezbXts8xQsNeKdtjeI7nLxOqc0j0yu7OIGR4U4q0gzLYA3-4tFMBgFxWZRHK_H2xuizSwx_yzTvxav-T9k9_jqwFqSnX-iyc4bg0QKZplI2ddGCxr2YprSUNWJTU-rQxK35JkzoXeI"
+                referrerPolicy="no-referrer"
+              />
             </div>
             <h1 className="font-headline text-2xl font-bold text-primary hidden md:block">RD GERENCIAMENTO</h1>
             <div className="flex flex-col ml-2 md:ml-0">
-               <span className="font-label-mono text-[10px] text-on-surface-variant uppercase leading-none">Sync: {syncCode}</span>
+               <span className="font-label-mono text-[10px] text-on-surface-variant uppercase leading-none">Horário Local</span>
                <span className="font-mono text-sm text-primary font-bold">{currentTime.toLocaleTimeString('pt-BR')}</span>
             </div>
           </div>
           
           <div className="flex items-center gap-2">
             <button 
-              onClick={() => {
-                const newDark = !isDark;
-                setIsDark(newDark);
-                if (syncCode) {
-                  setDoc(doc(db, 'settings', syncCode), { isDark: newDark, updatedAt: serverTimestamp() }, { merge: true });
-                }
-              }}
+              onClick={() => setIsDark(!isDark)}
               className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-all active:scale-90 text-primary border border-outline-variant/30"
               title={isDark ? "Mudar para Modo Claro" : "Mudar para Modo Escuro"}
             >
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <button 
-              onClick={() => {
-                localStorage.removeItem('rd_sync_code');
-                setSyncCode('');
-                setIsSyncing(false);
-              }}
-              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-error/10 transition-colors active:scale-95 text-error border border-error/30"
-              title="Sair / Mudar Código"
-            >
-              <LogOut size={20} />
+            <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors active:scale-95 text-primary border border-outline-variant/30">
+              <Bell size={20} />
             </button>
           </div>
         </div>
@@ -474,24 +277,9 @@ export default function Dashboard() {
                   <h2 className="font-headline-md text-on-surface">Análise de Resultados</h2>
                 </div>
                 <div className="inline-flex p-1 bg-surface-container rounded-lg border border-outline-variant">
-                  <button 
-                    onClick={() => setFilterType('daily')}
-                    className={cn("px-4 py-2 font-label-mono rounded transition-colors", filterType === 'daily' ? "bg-primary-container text-on-primary-container" : "text-on-surface-variant hover:text-on-surface")}
-                  >
-                    Diário
-                  </button>
-                  <button 
-                    onClick={() => setFilterType('monthly')}
-                    className={cn("px-4 py-2 font-label-mono rounded transition-colors", filterType === 'monthly' ? "bg-primary-container text-on-primary-container" : "text-on-surface-variant hover:text-on-surface")}
-                  >
-                    Mensal
-                  </button>
-                  <button 
-                    onClick={() => setFilterType('yearly')}
-                    className={cn("px-4 py-2 font-label-mono rounded transition-colors", filterType === 'yearly' ? "bg-primary-container text-on-primary-container" : "text-on-surface-variant hover:text-on-surface")}
-                  >
-                    Anual
-                  </button>
+                  <button className="px-4 py-2 font-label-mono rounded transition-colors bg-primary-container text-on-primary-container">Diário</button>
+                  <button className="px-4 py-2 font-label-mono rounded transition-colors text-on-surface-variant hover:text-on-surface">Mensal</button>
+                  <button className="px-4 py-2 font-label-mono rounded transition-colors text-on-surface-variant hover:text-on-surface">Anual</button>
                 </div>
               </div>
 
@@ -560,10 +348,7 @@ export default function Dashboard() {
                             autoFocus
                           />
                           <button 
-                            onClick={() => {
-                              setIsEditingBankroll(false);
-                              saveBankroll(initialBankroll);
-                            }}
+                            onClick={() => setIsEditingBankroll(false)}
                             className="bg-on-primary-container text-primary-container px-3 rounded font-bold text-xs uppercase"
                           >
                             OK
@@ -726,9 +511,7 @@ export default function Dashboard() {
                     <tbody className="divide-y divide-outline-variant">
                       {bets.map((item) => (
                         <tr key={item.id} className="hover:bg-surface-container-high transition-colors group">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {item.date.includes('-') ? item.date.split('-').reverse().join('/') : item.date}
-                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">{item.date}</td>
                           <td className="px-6 py-4">{item.event}</td>
                           <td className="px-6 py-4">{item.market}</td>
                           <td className="px-6 py-4 whitespace-nowrap">
