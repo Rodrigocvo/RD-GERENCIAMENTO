@@ -33,8 +33,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 import RegisterBet from './views/RegisterBet';
-import { auth, db, loginWithGoogle, logout } from '../lib/firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { db } from '../lib/firebase';
 import { 
   collection, 
   query, 
@@ -63,38 +62,32 @@ interface BetData {
   odds?: string;
   stake?: string;
   bonusPercent?: string;
+  bonusValue?: string;
   userId?: string;
 }
 
 export default function Dashboard() {
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
   const [filterType, setFilterType] = useState<FilterType>('monthly');
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loginError, setLoginError] = useState<string | null>(null);
+  const [syncCode, setSyncCode] = useState<string>(localStorage.getItem('rd_sync_code') || '');
+  const [isSyncing, setIsSyncing] = useState(!!localStorage.getItem('rd_sync_code'));
+  const [loading, setLoading] = useState(false);
   const [bets, setBets] = useState<BetData[]>([]);
   const [editingBet, setEditingBet] = useState<BetData | null>(null);
   const [analysisContext, setAnalysisContext] = useState<string>('Geral');
   const [initialBankroll, setInitialBankroll] = useState(10000);
   const [isEditingBankroll, setIsEditingBankroll] = useState(false);
 
-  // Auth State Listener
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setLoading(false);
-    });
-    return unsubscribe;
-  }, []);
+  const [isDark, setIsDark] = useState(true);
 
   // Fetch Data from Firebase
   useEffect(() => {
-    if (!user) return;
+    if (!syncCode) return;
 
     const betsRef = collection(db, 'bets');
     const q = query(
       betsRef, 
-      where('userId', '==', user.uid),
+      where('userId', '==', syncCode),
       orderBy('date', 'desc')
     );
 
@@ -105,10 +98,10 @@ export default function Dashboard() {
       })) as BetData[];
       setBets(data);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'bets');
+      console.error("Firestore error", error);
     });
 
-    const settingsRef = doc(db, 'settings', user.uid);
+    const settingsRef = doc(db, 'settings', syncCode);
     const unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
       if (docSnap.exists()) {
         const settings = docSnap.data();
@@ -118,16 +111,14 @@ export default function Dashboard() {
         }
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'settings');
+      console.error("Settings error", error);
     });
 
     return () => {
       unsubscribeBets();
       unsubscribeSettings();
     };
-  }, [user]);
-
-  const [isDark, setIsDark] = useState(true);
+  }, [syncCode]);
 
   // Filter bets based on selected period
   const filteredBets = useMemo(() => {
@@ -169,14 +160,17 @@ export default function Dashboard() {
     closedBets.forEach(bet => {
       const odd = parseFloat(bet.odds || '0');
       const stake = parseFloat(bet.stake || '0');
-      const bonus = parseFloat(bet.bonusPercent || '0') || 0;
-      const effectiveOdd = odd * (1 + bonus / 100);
+      const bonusPct = parseFloat(bet.bonusPercent || '0') || 0;
+      const bonusVal = parseFloat(bet.bonusValue || '0') || 0;
+      
+      const potentialProfitFromStake = stake * (odd - 1);
+      const profitWithBonusPct = potentialProfitFromStake * (1 + bonusPct / 100);
       
       totalStaked += stake;
       sumOdds += odd;
       
       if (bet.result === 'win' || bet.result === 'Ganha') {
-        totalProfit += stake * (effectiveOdd - 1);
+        totalProfit += profitWithBonusPct + bonusVal;
       } else if (bet.result === 'loss' || bet.result === 'Perdida') {
         totalProfit -= stake;
       }
@@ -216,18 +210,22 @@ export default function Dashboard() {
   }, [filteredBets]);
 
   // Generate detailed analysis data based on context
-  const analysisData = React.useMemo(() => {
+  const analysisData = useMemo(() => {
     const historicalBets = [...bets].reverse();
     let cumulativeProfit = 0;
     
     return historicalBets.map((b, i) => {
       const odd = parseFloat(b.odds || '0');
       const stake = parseFloat(b.stake || '0');
-      const bonus = parseFloat(b.bonusPercent || '0') || 0;
-      const effectiveOdd = odd * (1 + bonus / 100);
+      const bonusPct = parseFloat(b.bonusPercent || '0') || 0;
+      const bonusVal = parseFloat(b.bonusValue || '0') || 0;
+      
+      const potentialProfitFromStake = stake * (odd - 1);
+      const profitWithBonusPct = potentialProfitFromStake * (1 + bonusPct / 100);
+      const totalWinProfit = profitWithBonusPct + bonusVal;
       
       const profit = b.result === 'win' || b.result === 'Ganha' 
-        ? stake * (effectiveOdd - 1) 
+        ? totalWinProfit 
         : (b.result === 'loss' || b.result === 'Perdida' ? -stake : 0);
         
       cumulativeProfit += profit;
@@ -257,11 +255,11 @@ export default function Dashboard() {
   const currentAnalysis = analysisConfig[analysisContext as keyof typeof analysisConfig] || analysisConfig['Geral'];
 
   const handleDelete = async (id: string | number) => {
-    if (!user) return;
+    if (!syncCode) return;
     try {
       await deleteDoc(doc(db, 'bets', String(id)));
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `bets/${id}`);
+      console.error("Delete error", error);
     }
   };
 
@@ -271,20 +269,24 @@ export default function Dashboard() {
   };
 
   const onSaveBet = async (betData: any) => {
-    if (!user) return;
+    if (!syncCode) return;
     
     // Calculate ROI and Result Type based on data
     const oddsV = parseFloat(betData.odds) || 0;
-    const bonusV = parseFloat(betData.bonusPercent || '0') || 0;
-    const boostedV = oddsV * (1 + bonusV / 100);
+    const stakeV = parseFloat(betData.stake) || 0;
+    const bonusPctV = parseFloat(betData.bonusPercent || '0') || 0;
+    const bonusValV = parseFloat(betData.bonusValue || '0') || 0;
     
-    const roiValue = betData.result === 'win' || betData.result === 'Ganha'
-      ? `+${((boostedV - 1) * 100).toFixed(0)}%` 
+    const profitFromStake = stakeV * (oddsV - 1);
+    const winProfit = (profitFromStake * (1 + bonusPctV / 100)) + bonusValV;
+    
+    const roiValue = (betData.result === 'win' || betData.result === 'Ganha')
+      ? `+${((winProfit / stakeV) * 100).toFixed(0)}%` 
       : (betData.result === 'loss' || betData.result === 'Perdida' ? '-100%' : 'Pendente');
 
     const resultToSave = {
       ...betData,
-      userId: user.uid,
+      userId: syncCode,
       type: betData.result === 'win' || betData.result === 'Ganha' ? 'win' : (betData.result === 'loss' || betData.result === 'Perdida' ? 'loss' : 'win'),
       roi: roiValue,
       updatedAt: serverTimestamp()
@@ -303,21 +305,21 @@ export default function Dashboard() {
       }
       setActiveView('history');
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'bets');
+      console.error("Save error", error);
     }
   };
 
   const saveBankroll = async (value: number) => {
-    if (!user) return;
+    if (!syncCode) return;
     try {
-      await setDoc(doc(db, 'settings', user.uid), {
-        userId: user.uid,
+      await setDoc(doc(db, 'settings', syncCode), {
+        userId: syncCode,
         initialBankroll: value,
         isDark,
         updatedAt: serverTimestamp()
       }, { merge: true });
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'settings');
+      console.error("Settings save error", error);
     }
   };
 
@@ -345,6 +347,21 @@ export default function Dashboard() {
     }
   }, [isDark]);
 
+  const [syncInput, setSyncInput] = useState('');
+  const [showSyncError, setShowSyncError] = useState(false);
+
+  const applySync = () => {
+    if (syncInput.trim().length >= 4) {
+      const code = syncInput.trim().toUpperCase();
+      localStorage.setItem('rd_sync_code', code);
+      setSyncCode(code);
+      setIsSyncing(true);
+      setShowSyncError(false);
+    } else {
+      setShowSyncError(true);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#020617] text-primary">
@@ -353,38 +370,44 @@ export default function Dashboard() {
     );
   }
 
-  if (!user) {
+  if (!isSyncing) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-[#020617] p-6 text-center">
         <div className="w-24 h-24 rounded-3xl bg-primary/10 flex items-center justify-center mb-8">
            <LayoutDashboard size={48} className="text-primary" />
         </div>
         <h1 className="font-headline-lg text-white mb-4 uppercase tracking-tighter">RD GERENCIAMENTO</h1>
-        <p className="text-slate-400 font-body-md max-w-sm mb-6">
-          Gerencie suas apostas com precisão profissional e tenha seus dados sincronizados em tempo real em todos os seus dispositivos.
+        <p className="text-slate-400 font-body-md max-w-sm mb-12 leading-relaxed">
+          Para sincronizar entre seus dispositivos, use um código único. Se é sua primeira vez, invente qualquer código de 6 dígitos.
         </p>
-
-        {loginError && (
-          <div className="mb-6 p-4 bg-error/10 border border-error/20 rounded-xl text-error text-sm font-label-mono max-w-md">
-            Erro ao entrar: {loginError}
-            <p className="mt-2 text-xs opacity-70">Verifique se os domínios do app estão autorizados no console do Firebase.</p>
+        
+        <div className="w-full max-w-xs space-y-4">
+          <div className="flex flex-col text-left">
+            <label className="font-label-mono text-[10px] text-slate-400 uppercase mb-1 ml-1">Código de Sincronização</label>
+            <input 
+              type="text"
+              placeholder="Ex: RD123456"
+              className={cn(
+                "bg-slate-900 border px-4 py-4 rounded-xl text-white font-mono text-center tracking-widest outline-none transition-all",
+                showSyncError ? "border-error focus:border-error" : "border-slate-800 focus:border-primary"
+              )}
+              value={syncInput}
+              onChange={(e) => setSyncInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && applySync()}
+            />
           </div>
-        )}
-
-        <button 
-          onClick={async () => {
-            setLoginError(null);
-            try {
-              await loginWithGoogle();
-            } catch (err: any) {
-              setLoginError(err.message || 'Erro desconhecido');
-            }
-          }}
-          className="flex items-center gap-3 bg-white text-slate-900 px-8 py-4 rounded-xl font-headline font-bold text-sm tracking-widest uppercase hover:bg-slate-200 transition-all active:scale-95"
-        >
-          <LogIn size={20} />
-          Entrar com Google
-        </button>
+          <button 
+            onClick={applySync}
+            className="w-full bg-primary text-white py-4 rounded-xl font-headline font-bold text-xs tracking-widest uppercase hover:brightness-110 transition-all active:scale-95"
+          >
+            Acessar e Sincronizar
+          </button>
+          <div className="pt-4">
+            <p className="text-[10px] font-label-mono text-slate-500 uppercase">
+              Seus dados serão salvos em tempo real usando este código.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -395,17 +418,12 @@ export default function Dashboard() {
       <header className="bg-surface border-b border-outline-variant sticky top-0 z-50">
         <div className="flex justify-between items-center w-full px-6 py-3 max-w-7xl mx-auto h-16">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant">
-              <img 
-                alt="User Profile Avatar" 
-                className="w-full h-full object-cover" 
-                src={user.photoURL || "https://lh3.googleusercontent.com/aida-public/AB6AXuANz3V1A1iflFa7bVeMqJ9nDgDogkZNKXPg0aDxZMcLQRapfzJOZ9siaxEY-BB9c0hImJxQaFbvGd_pRuSe-elbDT37tJQ9WRA3cdvD81kvicAqtbDFbOQyRgoG28IQUBuhxezbXts8xQsNeKdtjeI7nLxOqc0j0yu7OIGR4U4q0gzLYA3-4tFMBgFxWZRHK_H2xuizSwx_yzTvxav-T9k9_jqwFqSnX-iyc4bg0QKZplI2ddGCxr2YprSUNWJTU-rQxK35JkzoXeI"}
-                referrerPolicy="no-referrer"
-              />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+               <LayoutDashboard size={20} className="text-primary" />
             </div>
             <h1 className="font-headline text-2xl font-bold text-primary hidden md:block">RD GERENCIAMENTO</h1>
             <div className="flex flex-col ml-2 md:ml-0">
-               <span className="font-label-mono text-[10px] text-on-surface-variant uppercase leading-none">Horário Local</span>
+               <span className="font-label-mono text-[10px] text-on-surface-variant uppercase leading-none">Sync: {syncCode}</span>
                <span className="font-mono text-sm text-primary font-bold">{currentTime.toLocaleTimeString('pt-BR')}</span>
             </div>
           </div>
@@ -415,8 +433,8 @@ export default function Dashboard() {
               onClick={() => {
                 const newDark = !isDark;
                 setIsDark(newDark);
-                if (user) {
-                  setDoc(doc(db, 'settings', user.uid), { isDark: newDark, updatedAt: serverTimestamp() }, { merge: true });
+                if (syncCode) {
+                  setDoc(doc(db, 'settings', syncCode), { isDark: newDark, updatedAt: serverTimestamp() }, { merge: true });
                 }
               }}
               className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-all active:scale-90 text-primary border border-outline-variant/30"
@@ -425,9 +443,13 @@ export default function Dashboard() {
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
             <button 
-              onClick={logout}
+              onClick={() => {
+                localStorage.removeItem('rd_sync_code');
+                setSyncCode('');
+                setIsSyncing(false);
+              }}
               className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-error/10 transition-colors active:scale-95 text-error border border-error/30"
-              title="Sair"
+              title="Sair / Mudar Código"
             >
               <LogOut size={20} />
             </button>
