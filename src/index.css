@@ -56,8 +56,27 @@
 }
 
 @layer base {
+  .light {
+    --color-on-surface: #0f172a;
+    --color-surface: #ffffff;
+    --color-background: #f8fafc;
+    --color-surface-container: #f1f5f9;
+    --color-surface-container-low: #f8fafc;
+    --color-surface-container-lowest: #ffffff;
+    --color-surface-container-high: #e2e8f0;
+    --color-surface-container-highest: #cbd5e1;
+    --color-outline-variant: #cbd5e1;
+    --color-on-surface-variant: #475569;
+    --color-primary: #2563eb;
+    --color-on-primary: #ffffff;
+    --color-primary-container: #dbeafe;
+    --color-on-primary-container: #1e3a8a;
+  }
+}
+
+@layer base {
   body {
-    @apply bg-[#020617] text-on-surface font-sans;
+    @apply bg-background text-on-surface font-sans transition-colors duration-300;
   }
 }
 

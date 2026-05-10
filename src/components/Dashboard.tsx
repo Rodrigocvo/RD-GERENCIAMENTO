@@ -24,7 +24,9 @@ import {
   Edit2,
   Trash2,
   ExternalLink,
-  ArrowRight
+  ArrowRight,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/src/lib/utils';
@@ -202,8 +204,28 @@ export default function Dashboard() {
     setActiveView('analysis');
   };
 
+  const [isDark, setIsDark] = useState(true);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update clock every second
+  React.useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Sync theme with HTML class
+  React.useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.add('light');
+    }
+  }, [isDark]);
+
   return (
-    <div className="flex flex-col min-h-screen pb-24">
+    <div className={cn("flex flex-col min-h-screen pb-24 transition-colors duration-300", isDark ? "bg-[#020617]" : "bg-slate-50")}>
       {/* TopAppBar */}
       <header className="bg-surface border-b border-outline-variant sticky top-0 z-50">
         <div className="flex justify-between items-center w-full px-6 py-3 max-w-7xl mx-auto h-16">
@@ -216,11 +238,25 @@ export default function Dashboard() {
                 referrerPolicy="no-referrer"
               />
             </div>
-            <h1 className="font-headline text-2xl font-bold text-primary">RD GERENCIAMENTO</h1>
+            <h1 className="font-headline text-2xl font-bold text-primary hidden md:block">RD GERENCIAMENTO</h1>
+            <div className="flex flex-col ml-2 md:ml-0">
+               <span className="font-label-mono text-[10px] text-on-surface-variant uppercase leading-none">Horário Local</span>
+               <span className="font-mono text-sm text-primary font-bold">{currentTime.toLocaleTimeString('pt-BR')}</span>
+            </div>
           </div>
-          <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors active:scale-95 text-primary">
-            <Bell size={24} />
-          </button>
+          
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsDark(!isDark)}
+              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-all active:scale-90 text-primary border border-outline-variant/30"
+              title={isDark ? "Mudar para Modo Claro" : "Mudar para Modo Escuro"}
+            >
+              {isDark ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+            <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors active:scale-95 text-primary border border-outline-variant/30">
+              <Bell size={20} />
+            </button>
+          </div>
         </div>
       </header>
 
