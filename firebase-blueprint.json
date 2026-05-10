@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "bet": {
+      "title": "Bet",
+      "description": "Represents a sports bet entry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "event": { "type": "string" },
+        "market": { "type": "string" },
+        "odds": { "type": "string" },
+        "stake": { "type": "string" },
+        "result": { "type": "string", "enum": ["win", "loss", "pending", "Ganha", "Perdida"] },
+        "bonusPercent": { "type": "string" },
+        "roi": { "type": "string" },
+        "type": { "type": "string", "enum": ["win", "loss"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "date", "event", "market", "odds", "stake", "result"]
+    },
+    "userSettings": {
+      "title": "User Settings",
+      "description": "User specific application settings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "initialBankroll": { "type": "number" },
+        "isDark": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "initialBankroll"]
+    }
+  },
+  "firestore": {
+    "/bets/{betId}": {
+      "schema": "bet",
+      "description": "Collection of all bets"
+    },
+    "/settings/{userId}": {
+      "schema": "userSettings",
+      "description": "User specific settings and bankroll"
+    }
+  }
+}
