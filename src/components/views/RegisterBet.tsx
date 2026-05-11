@@ -53,30 +53,28 @@ export default function RegisterBet({ onSave, onCancel, initialData }: RegisterB
   const expectedProfit = (boostedOdds > 1 && stakeNum > 0) ? (stakeNum * (boostedOdds - 1)).toFixed(2) : '0.00';
   const expectedReturn = (boostedOdds > 0 && stakeNum > 0) ? (stakeNum * boostedOdds).toFixed(2) : '0.00';
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     
-    try {
-      await onSave(formData);
-      setIsSubmitting(false);
-      setSuccess(true);
-      if (!initialData) {
-        setFormData({
-          date: new Date().toISOString().split('T')[0],
-          event: '',
-          market: '',
-          odds: '',
-          stake: '',
-          result: 'pending',
-          bonusPercent: '0'
-        });
-      }
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (error) {
-      console.error("Error saving bet", error);
-      setIsSubmitting(false);
+    // Salvamento local é instantâneo
+    onSave(formData);
+    
+    setIsSubmitting(false);
+    setSuccess(true);
+    
+    if (!initialData) {
+      setFormData({
+        date: new Date().toISOString().split('T')[0],
+        event: '',
+        market: '',
+        odds: '',
+        stake: '',
+        result: 'pending',
+        bonusPercent: '0'
+      });
     }
+    setTimeout(() => setSuccess(false), 3000);
   };
 
   return (

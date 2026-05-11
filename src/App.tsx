@@ -1,14 +1,28 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
+import React, { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
-import { FirebaseProvider, useFirebase } from './components/FirebaseProvider';
 
-function AppContent() {
-  const { user, loading } = useFirebase();
+export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Verifica se já estava logado
+    const token = localStorage.getItem('rd_auth_token');
+    if (token === 'logged_in') {
+      setIsAuthenticated(true);
+    }
+    setLoading(false);
+  }, []);
+
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('rd_auth_token');
+    setIsAuthenticated(false);
+  };
 
   if (loading) {
     return (
@@ -20,16 +34,11 @@ function AppContent() {
 
   return (
     <div className="min-h-screen">
-      {user ? <Dashboard /> : <Login />}
+      {isAuthenticated ? (
+        <Dashboard onLogout={handleLogout} />
+      ) : (
+        <Login onLogin={handleLogin} />
+      )}
     </div>
   );
 }
-
-export default function App() {
-  return (
-    <FirebaseProvider>
-      <AppContent />
-    </FirebaseProvider>
-  );
-}
-
