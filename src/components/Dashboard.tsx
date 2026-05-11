@@ -26,7 +26,7 @@ import {
   LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '@/src/lib/utils';
+import { cn } from '../lib/utils';
 import RegisterBet from './views/RegisterBet';
 import { storage } from '../lib/storage';
 
