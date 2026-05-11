@@ -1,6 +1,6 @@
 {
   "name": "RD Gerenciamento",
-  "description": "Sistema de gerenciamento de apostas profissional com armazenamento local seguro e acesso restrito.",
+  "description": "Dashboard profissional para análise de performance em apostas esportivas, com métricas em tempo real e histórico detalhado.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

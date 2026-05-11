@@ -11,10 +11,10 @@ import {
   Clock,
   ArrowRight
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '@/src/lib/utils';
 
 interface BetData {
-  id?: string;
+  id?: number;
   date: string;
   event: string;
   market: string;
@@ -25,13 +25,13 @@ interface BetData {
 }
 
 interface RegisterBetProps {
-  onSave: (bet: any) => void;
+  onSave: (bet: BetData) => void;
   onCancel?: () => void;
-  initialData?: any | null;
+  initialData?: BetData | null;
 }
 
 export default function RegisterBet({ onSave, onCancel, initialData }: RegisterBetProps) {
-  const [formData, setFormData] = useState<any>(initialData || {
+  const [formData, setFormData] = useState<BetData>(initialData || {
     date: new Date().toISOString().split('T')[0],
     event: '',
     market: '',
@@ -57,24 +57,23 @@ export default function RegisterBet({ onSave, onCancel, initialData }: RegisterB
     e.preventDefault();
     setIsSubmitting(true);
     
-    // Salvamento local é instantâneo
-    onSave(formData);
-    
-    setIsSubmitting(false);
-    setSuccess(true);
-    
-    if (!initialData) {
-      setFormData({
-        date: new Date().toISOString().split('T')[0],
-        event: '',
-        market: '',
-        odds: '',
-        stake: '',
-        result: 'pending',
-        bonusPercent: '0'
-      });
-    }
-    setTimeout(() => setSuccess(false), 3000);
+    // Simulate API delay
+    setTimeout(() => {
+      onSave(formData);
+      setIsSubmitting(false);
+      setSuccess(true);
+      if (!initialData) {
+        setFormData({
+          date: new Date().toISOString().split('T')[0],
+          event: '',
+          market: '',
+          odds: '',
+          stake: '',
+          result: 'pending'
+        });
+      }
+      setTimeout(() => setSuccess(false), 3000);
+    }, 600);
   };
 
   return (
