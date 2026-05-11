@@ -24,6 +24,14 @@ export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const googleProvider = new GoogleAuthProvider();
 
+// Apply custom client ID if provided by the user
+const customClientId = import.meta.env.VITE_RDGERENCIAMENTO;
+if (customClientId) {
+  googleProvider.setCustomParameters({
+    client_id: customClientId
+  });
+}
+
 // Connection Test
 async function testConnection() {
   try {

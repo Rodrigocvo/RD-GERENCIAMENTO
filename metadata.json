@@ -1,6 +1,6 @@
 {
   "name": "RD Gerenciamento",
-  "description": "Dashboard profissional para análise de performance em apostas esportivas, com métricas em tempo real e histórico detalhado.",
+  "description": "Dashboard profissional com sincronização em nuvem e login Google para análise de performance em apostas esportivas em qualquer dispositivo.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
