@@ -1,5 +1,12 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut,
+  onAuthStateChanged,
+  sendPasswordResetEmail
+} from 'firebase/auth';
 import { 
   getFirestore, 
   collection, 
@@ -15,22 +22,14 @@ import {
   deleteDoc,
   getDocFromServer,
   Timestamp,
-  orderBy
+  orderBy,
+  serverTimestamp
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const googleProvider = new GoogleAuthProvider();
-
-// Apply custom client ID if provided by the user
-const customClientId = import.meta.env.VITE_RDGERENCIAMENTO;
-if (customClientId) {
-  googleProvider.setCustomParameters({
-    client_id: customClientId
-  });
-}
 
 // Connection Test
 async function testConnection() {
@@ -83,14 +82,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 }
 
 // Auth Helpers
-export const loginWithGoogle = async () => {
-  try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
-  } catch (error) {
-    console.error("Error signing in with Google", error);
-    throw error;
-  }
-};
-
+export const loginWithEmail = (email: string, pass: string) => signInWithEmailAndPassword(auth, email, pass);
+export const registerWithEmail = (email: string, pass: string) => createUserWithEmailAndPassword(auth, email, pass);
+export const resetPassword = (email: string) => sendPasswordResetEmail(auth, email);
 export const logout = () => signOut(auth);

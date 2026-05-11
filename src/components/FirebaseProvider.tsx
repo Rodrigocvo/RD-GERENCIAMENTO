@@ -35,8 +35,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           const newUserData = {
             uid: currentUser.uid,
             email: currentUser.email,
-            displayName: currentUser.displayName,
-            photoURL: currentUser.photoURL,
+            displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Usuário',
+            photoURL: currentUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.uid}`,
             initialBankroll: 10000,
             isDark: true,
             createdAt: serverTimestamp(),
